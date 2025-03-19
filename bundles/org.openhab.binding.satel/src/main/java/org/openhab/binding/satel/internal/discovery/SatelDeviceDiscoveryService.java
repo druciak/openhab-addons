@@ -15,10 +15,7 @@ package org.openhab.binding.satel.internal.discovery;
 import static org.openhab.binding.satel.internal.SatelBindingConstants.*;
 
 import java.nio.charset.Charset;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -50,14 +47,14 @@ import org.slf4j.LoggerFactory;
 public class SatelDeviceDiscoveryService extends AbstractDiscoveryService {
 
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES = Stream
-            .of(DEVICE_THING_TYPES_UIDS, VIRTUAL_THING_TYPES_UIDS).flatMap(uids -> uids.stream())
+            .of(DEVICE_THING_TYPES_UIDS, VIRTUAL_THING_TYPES_UIDS).flatMap(Collection::stream)
             .collect(Collectors.toSet());
     private static final int OUTPUT_FUNCTION_SHUTTER = 105;
 
     private final Logger logger = LoggerFactory.getLogger(SatelDeviceDiscoveryService.class);
 
-    private SatelBridgeHandler bridgeHandler;
-    private Function<ThingTypeUID, ThingType> thingTypeProvider;
+    private final SatelBridgeHandler bridgeHandler;
+    private final Function<ThingTypeUID, ThingType> thingTypeProvider;
     private volatile boolean scanStopped;
 
     public SatelDeviceDiscoveryService(SatelBridgeHandler bridgeHandler,
@@ -119,7 +116,7 @@ public class SatelDeviceDiscoveryService extends AbstractDiscoveryService {
                 // serious failure, disconnection or so
                 scanStopped = true;
                 logger.error("Unexpected failure during scan for {} using {}", deviceType.name(),
-                        bridgeHandler.getThing().getUID().toString());
+                        bridgeHandler.getThing().getUID());
             }
         }
         if (scanStopped) {
@@ -135,7 +132,7 @@ public class SatelDeviceDiscoveryService extends AbstractDiscoveryService {
         if (thingTypeUID == null) {
             logger.warn("Unknown device found: type={}, kind={}, name={}", deviceType.name(), deviceKind, deviceName);
         } else if (!getSupportedThingTypes().contains(thingTypeUID)) {
-            logger.warn("Unsupported device: {}", thingTypeUID.toString());
+            logger.warn("Unsupported device: {}", thingTypeUID);
         } else {
             Map<String, Object> properties = new HashMap<>();
 
@@ -146,6 +143,8 @@ public class SatelDeviceDiscoveryService extends AbstractDiscoveryService {
                 properties.put(SatelThingConfig.ID, deviceId);
             }
 
+            logger.debug("Adding thing: type={}, id={}, name={}, properties={}", thingTypeUID, deviceId, deviceName,
+                    properties);
             addThing(thingTypeUID, String.valueOf(deviceId), deviceName, properties);
         }
     }
@@ -161,33 +160,20 @@ public class SatelDeviceDiscoveryService extends AbstractDiscoveryService {
     }
 
     private static @Nullable ThingTypeUID getThingTypeUID(DeviceType deviceType, int deviceKind) {
-        switch (deviceType) {
-            case OUTPUT:
-                return (deviceKind == OUTPUT_FUNCTION_SHUTTER) ? THING_TYPE_SHUTTER : THING_TYPE_OUTPUT;
-            case PARTITION:
-            case PARTITION_WITH_OBJECT:
-                return THING_TYPE_PARTITION;
-            case ZONE:
-            case ZONE_WITH_PARTITION:
-                return THING_TYPE_ZONE;
-            default:
-                return null;
-        }
+        return switch (deviceType) {
+            case OUTPUT -> (deviceKind == OUTPUT_FUNCTION_SHUTTER) ? THING_TYPE_SHUTTER : THING_TYPE_OUTPUT;
+            case PARTITION, PARTITION_WITH_OBJECT -> THING_TYPE_PARTITION;
+            case ZONE, ZONE_WITH_PARTITION -> THING_TYPE_ZONE;
+            default -> null;
+        };
     }
 
     private static boolean isDeviceAvailable(DeviceType deviceType, int deviceKind) {
-        switch (deviceType) {
-            case OUTPUT:
-                return deviceKind != 0 && deviceKind != OUTPUT_FUNCTION_SHUTTER
-                        && (deviceKind != OUTPUT_FUNCTION_SHUTTER + 1);
-            case PARTITION:
-            case PARTITION_WITH_OBJECT:
-            case ZONE:
-            case ZONE_WITH_PARTITION:
-                return true;
-            default:
-                return false;
-        }
+        return switch (deviceType) {
+            case OUTPUT -> deviceKind != 0 && deviceKind != (OUTPUT_FUNCTION_SHUTTER + 1);
+            case PARTITION, PARTITION_WITH_OBJECT, ZONE, ZONE_WITH_PARTITION -> true;
+            default -> false;
+        };
     }
 
     private static String toCamelCase(String s) {
